@@ -1,8 +1,8 @@
 ################################################################################
 # North Carolina State University. Mali Lab 
-# Spotted Turtle (Clemmys guttata) Home Range Liturature Review
-# Abigale Conklin, Eliza Foli, Will Harrod, Courtney Grubbs, Alex Acker, 
-# Charlette Whorton, & Ivana Malli 
+# Spotted Turtle (Clemmys guttata) Home Range Literature Review
+# Abigail Conklin, Eliza Foli, Will Harrod, Courtney Grubbs, Alex Acker, 
+# Charlotte Whorton, & Ivana Mali 
 # Simulating data to practice a meta analysis
 ################################################################################
 
@@ -82,9 +82,10 @@ lit_rev <- sim_dat_hr %>%
           n.turtles = n(),
           ecoregion = as.factor(unique(ecoregion)),
           kde = as.factor(unique(kde))) %>% 
-  mutate(study.id = as.factor(case_when(male == 0 ~ paste0(study.id, "F"),
+  mutate(sex.study.id = as.factor(case_when(male == 0 ~ paste0(study.id, "F"),
                               male == 1 ~ paste0(study.id, "M"))),
-         sex = as.factor(case_when(male == 0 ~ "F", male == 1 ~ "M"))) %>% 
+         sex = as.factor(case_when(male == 0 ~ "F", male == 1 ~ "M")),
+         study.id = as.factor(study.id)) %>% 
   select(-male) %>%
   distinct()
 
@@ -93,7 +94,7 @@ glimpse(lit_rev)
 slice_head(lit_rev, n = 30)
 
 ################################################################################
-# 3: Explore Trends#############################################################
+# 3: Explore Trends ############################################################
 ################################################################################
 
 # Histogram of mean home range sizes by sex
@@ -132,10 +133,97 @@ dat_eff <- escalc(measure = "MN",
 slice_head(dat_eff, n = 30)
 
 # Fit the meta-regression model
-res <- rma(yi, vi, 
+out <- rma(yi, vi, 
            mods = ~ sex + ecoregion + kde, 
            data = dat_eff,
            method = "REML") # Restricted Maximum Likelihood is standard
 
 # View the results
-summary(res)
+sum_out <- summary(out)
+sum_out
+
+################################################################################
+# 5: Visualize results #########################################################
+################################################################################
+
+# Convert output to a tibble 
+out_tbl <- tibble(parameter = names(coef(out)),
+                  true.val = c(beta0, beta_male, beta_eco_reg[4], beta_eco_reg[3], beta_eco_reg[2], beta_kde),
+                  mean = sum_out$beta[,1],
+                  ci.lb = sum_out$ci.lb,
+                  ci.ub = sum_out$ci.ub,
+                  p.val = sum_out$pval) %>% 
+  # Subtract model estimates from the true values
+  mutate(mu.diff = mean - true.val,
+         lb.diff = ci.lb -true.val,
+         ub.diff = ci.ub - true.val) %>% 
+  # Add a column for whether or not the true parameter falls within the 95% CI
+  mutate(overlap = as.factor(case_when(lb.diff * ub.diff >= 0 ~ "No",
+                                       lb.diff * ub.diff < 0 ~ "Yes")),
+         signif = as.factor(case_when(p.val > 0.01 ~ "No",
+                                           p.val <= 0.01 ~ "Yes"))) %>% 
+  # Put parameters names in an order that makes sense
+  mutate(parameter = case_when(parameter == "intrcpt" ~ "Intercept",
+                               parameter == "sexM" ~ "Sex Male",
+                               parameter == "kde1" ~ "KDE",
+                               TRUE ~ parameter)) %>% 
+  mutate(parameter = factor(parameter, levels = c("Intercept", "Sex Male", "KDE",
+                                                    "ecoregion1", "ecoregion2", "ecoregion3"))) %>% 
+  arrange(parameter)
+
+# View
+out_tbl
+
+# Plot the model estimates
+out_tbl %>%
+  # Open the plot
+  ggplot(aes(y = fct_rev(parameter))) +
+  # Add points at the mean values for each parameters
+  geom_point(aes(x = mean, color = signif), shape = 15, size = 4) +
+  # Add whiskers for 95% Bayesian Credible intervals
+  geom_linerange(aes(xmin = ci.lb, xmax = ci.ub, color = signif), linewidth = 1.5) +
+  # Add a vertical Line at zero
+  geom_vline(xintercept = 0, linetype = "dashed", linewidth = 1) +
+  # Change the Labels
+  labs(x = "parameter estimate", 
+       y = "", 
+       title = "") + 
+  # Simple theme
+  theme_classic() +
+  # Custom colors
+  scale_color_manual(values = c("No" = "lightsteelblue4", 
+                                "Yes" = "seagreen")) +
+  # Edit theme
+  theme(legend.position = "none",
+        plot.title = element_text(size = 20, family = "Open Sans"),
+        axis.text.y = element_text(size = 16, family = "Open Sans"),
+        axis.title.x = element_text(size = 18, family = "Open Sans"),
+        axis.text.x = element_text(size = 18, family = "Open Sans")) 
+
+
+# Compare model estimates to the true results 
+out_tbl %>%
+  # Open the plot
+  ggplot(aes(y = fct_rev(parameter))) +
+  # Add points at the mean values for each parameters
+  geom_point(aes(x = mu.diff, color = overlap), shape = 15, size = 4) +
+  # Add whiskers for 95% Bayesian Credible intervals
+  geom_linerange(aes(xmin = lb.diff, xmax = ub.diff, color = overlap), linewidth = 1.5) +
+  # Add a vertical Line at zero
+  geom_vline(xintercept = 0, linetype = "dashed", linewidth = 1) +
+  # Change the Labels
+  labs(x = "deviation from true parameter value", 
+       y = "", 
+       title = "") + 
+  # Simple theme
+  theme_classic() +
+  # Custom colors
+  scale_color_manual(values = c("No" = "lightsteelblue4", 
+                                "Yes" = "navyblue")) +
+  # Edit theme
+  theme(legend.position = "none",
+        plot.title = element_text(size = 20, family = "Open Sans"),
+        axis.text.y = element_text(size = 16, family = "Open Sans"),
+        axis.title.x = element_text(size = 18, family = "Open Sans"),
+        axis.text.x = element_text(size = 18, family = "Open Sans")) 
+  
