@@ -38,7 +38,7 @@ eco_reg_vect <- rep(eco_reg_prob, n_eco_reg)
 beta0 <- 5 
 beta_male <- 2
 beta_kde <- 1
-beta_eco_reg <- c(0, rnorm(n = n_eco_reg - 1, 0, 2))
+beta_eco_reg <- c(0, rnorm(n = n_eco_reg - 1, 0, 1))
 
 # Study information
 n_turtles_study <- rpois(n = n_studies, 15)
@@ -123,17 +123,17 @@ lit_rev %>%
 glimpse(lit_rev)
 
 # Calculate the effect size (yi) and sampling variance (vi)
-dat_eff <- escalc(measure = "MN", 
-                  mi = hr.mean, 
-                  sdi = hr.sd, 
-                  ni = n.turtles, 
-                  data = lit_rev)
+dat_eff <- metafor::escalc(measure = "MN", 
+                           mi = hr.mean, 
+                           sdi = hr.sd, 
+                           ni = n.turtles, 
+                           data = lit_rev)
 
 # View the new columns: 'yi' (effect size) and 'vi' (variance)
 slice_head(dat_eff, n = 30)
 
 # Fit the meta-regression model
-out <- rma(yi, vi, 
+out <- metafor::rma(yi, vi, 
            mods = ~ sex + ecoregion + kde, 
            data = dat_eff,
            method = "REML") # Restricted Maximum Likelihood is standard
@@ -145,6 +145,8 @@ sum_out
 ################################################################################
 # 5: Visualize results #########################################################
 ################################################################################
+
+# 5.1: Prepare model output ####################################################
 
 # Convert output to a tibble 
 out_tbl <- tibble(parameter = names(coef(out)),
@@ -166,13 +168,18 @@ out_tbl <- tibble(parameter = names(coef(out)),
   mutate(parameter = case_when(parameter == "intrcpt" ~ "Intercept",
                                parameter == "sexM" ~ "Sex Male",
                                parameter == "kde1" ~ "KDE",
+                               parameter ==  "ecoregion1" ~  "Ecoregion2",
+                               parameter ==  "ecoregion2" ~  "Ecoregion3",
+                               parameter ==  "ecoregion3" ~  "Ecoregion4",
                                TRUE ~ parameter)) %>% 
   mutate(parameter = factor(parameter, levels = c("Intercept", "Sex Male", "KDE",
-                                                    "ecoregion1", "ecoregion2", "ecoregion3"))) %>% 
+                                                    "Ecoregion2", "Ecoregion3", "Ecoregion4"))) %>% 
   arrange(parameter)
 
 # View
 out_tbl
+
+# 5.2: Parameter estimates plot ################################################
 
 # Plot the model estimates
 out_tbl %>%
@@ -195,11 +202,13 @@ out_tbl %>%
                                 "Yes" = "seagreen")) +
   # Edit theme
   theme(legend.position = "none",
-        plot.title = element_text(size = 20, family = "Open Sans"),
-        axis.text.y = element_text(size = 16, family = "Open Sans"),
-        axis.title.x = element_text(size = 18, family = "Open Sans"),
-        axis.text.x = element_text(size = 18, family = "Open Sans")) 
+        plot.title = element_text(size = 20),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.text.x = element_text(size = 18)) 
 
+
+# 5.3: deviation from true parameter plot ######################################
 
 # Compare model estimates to the true results 
 out_tbl %>%
@@ -222,8 +231,14 @@ out_tbl %>%
                                 "Yes" = "navyblue")) +
   # Edit theme
   theme(legend.position = "none",
-        plot.title = element_text(size = 20, family = "Open Sans"),
-        axis.text.y = element_text(size = 16, family = "Open Sans"),
-        axis.title.x = element_text(size = 18, family = "Open Sans"),
-        axis.text.x = element_text(size = 18, family = "Open Sans")) 
-  
+        plot.title = element_text(size = 20),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.text.x = element_text(size = 18)) 
+
+# 5.5: Effect size and sample variance by study ################################
+
+# Clean the effect size results 
+eft_size_tbl <- dat_eff %>% 
+  rename(Mean = "yi",
+         Varience = "vi")
