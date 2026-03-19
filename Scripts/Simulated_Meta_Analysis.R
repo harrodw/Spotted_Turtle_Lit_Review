@@ -82,12 +82,11 @@ lit_rev <- sim_dat_hr %>%
           n.turtles = n(),
           ecoregion = as.factor(unique(ecoregion)),
           kde = as.factor(unique(kde))) %>% 
-  mutate(sex.study.id = as.factor(case_when(male == 0 ~ paste0(study.id, "F"),
-                              male == 1 ~ paste0(study.id, "M"))),
-         sex = as.factor(case_when(male == 0 ~ "F", male == 1 ~ "M")),
-         study.id = as.factor(study.id)) %>% 
-  select(-male) %>%
-  distinct()
+  mutate(sex = if_else(male == 1, "M", "F")) %>% 
+  select(-male) %>% 
+  pivot_wider(names_from = sex,
+              values_from = c(hr.mean, hr.sd, n.turtles, ecoregion, kde)) %>% 
+  select(-kde_M, eco)
 
 # View
 glimpse(lit_rev)
