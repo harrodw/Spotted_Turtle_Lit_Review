@@ -4,6 +4,7 @@
 # Abigail Conklin, Eliza Foli, Will Harrod, Courtney Grubbs, Alex Acker, 
 # Charlotte Whorton, & Ivana Mali 
 # Simulating data to practice a meta analysis
+# Script 1 of 4
 ################################################################################
 
 ################################################################################

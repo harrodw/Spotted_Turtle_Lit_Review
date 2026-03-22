@@ -64,7 +64,7 @@ spotties_mcp <- spotties_track %>%
 spotties_mcp
 
 # plot a turtle's hr
-plot(spotties_mcp$mcp[[1]])
+plot(spotties_mcp$mcp[[4]])
 
 # Calculate HR area
 mcp_area <- map_df(spotties_mcp$mcp, hr_area) %>% 
