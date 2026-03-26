@@ -15,7 +15,7 @@ rm(list = ls())
 
 # 1.2: Add Packages ------------------------------------------------------------
 
-# Install packages (comment back in if you haven't installed these before)
+# Install packages: (comment back in if you haven't installed these before)
 # install.packages(c("tidyverse", "meta", "AICcmodavg", "flextable")) 
 
 # Load packages
@@ -23,6 +23,7 @@ library(tidyverse)
 library(metafor)
 library(flextable)
 library(broom)
+library(scales)
 
 # Add the data
 hr <- read.csv("Data\\C_guttata_ MetaReg_Data.csv")
@@ -78,6 +79,10 @@ hr_final <- hr_lng %>%
   mutate(sd = case_when(is.na(sd) ~ mean, TRUE ~ sd)) %>% 
   # Calculate sampling varience. Formula: (SD / Mean)^2 / n
   mutate(vi = (sd / exp(mean))^2 / SampSize) %>%
+  # Create a new colun for coastal vs inland
+  mutate(Coastal = case_when(EcoReg.II %in% c("8_1", "8_5") ~ "Coastal",
+                            TRUE ~ "Inland")) %>% 
+  mutate(Coastal = factor(Coastal, levels = c("Coastal", "Inland"))) %>% 
   # rename response variable
   rename(mean.HR = mean) %>% 
   # Name categorical variables  
@@ -85,7 +90,7 @@ hr_final <- hr_lng %>%
                          Sex == "F" ~ "Female",
                          Sex == "M" ~ "Male",
                          TRUE ~ NA),
-         EcoReg.II = case_when(EcoReg.II == "5_2" ~ "5.2 Mixed Woood Shield",
+         EcoReg.II = case_when(EcoReg.II == "5_2" ~ "5.2 Mixed Wood Shield",
                                EcoReg.II == "5_3" ~ "5.3 Atlantic Highlands",
                                EcoReg.II == "8_1" ~ "8.1 Mixed Wood Plain",
                                EcoReg.II == "8_2" ~ "8.2 Central USA Plains",
@@ -99,16 +104,18 @@ hr_final <- hr_lng %>%
                                   HR.Estimator == "tlocoh" ~ "T-LoCoH",
                                   TRUE ~ NA)) %>% 
   # Convert them to factors
-  mutate(Sex = factor(Sex, levels = c("Combined", "Female", "Male")),
-         EcoReg.II = factor(EcoReg.II, levels = c("5.2 Mixed Woood Shield", 
+  mutate(Sex = factor(Sex, levels = c("Female", "Male", "Combined")),
+         EcoReg.II = factor(EcoReg.II, levels = c("5.2 Mixed Wood Shield", 
                                                   "5.3 Atlantic Highlands", 
                                                   "8.1 Mixed Wood Plain", 
                                                   "8.2 Central USA Plains", 
                                                   "8.3 SE USA Plains", 
                                                   "8.4 Ozarks", 
                                                   "8.5 SE Costal Plain")),
-         HR.Estimator = factor(HR.Estimator, levels = c("95% KDE", "95% MCP", "100% MCP", "T-LoCoH")))
-
+         HR.Estimator = factor(HR.Estimator, levels = c("100% MCP", "95% MCP", "95% KDE", "T-LoCoH"))) %>% 
+ # Try removing O'Bryan (2015)
+  filter(Paper != "OBryan-et-al.-2015")
+  
 # View
 glimpse(hr_final)
 
@@ -143,17 +150,17 @@ clemmys_pal <- c("#F7E57C", "#C0361C", "#422E28")
 # HR by male and female
 hr_final %>% 
   ggplot() +
-  geom_boxplot(aes(x = Sex, y = mean.HR, col = Sex, fill = Sex)) +
+  geom_boxplot(aes(x = Sex, y = mean.HR, col = Sex)) +
   scale_color_manual(values = clemmys_pal) +
   scale_fill_manual(values = clemmys_pal) +
   theme_classic() +
-  labs(y = "Average Home Range Size") +
+  labs(y = "Average Home Range Size (ha)") +
   theme(
     axis.title.x = element_blank(),
-    plot.title = element_text(size = 22, family = "Open Sans"),
-    axis.title.y = element_text(size = 18, family = "Open Sans"),
-    axis.text = element_text(size = 18, family = "Open Sans"),
-    legend.text = element_text(size = 18, family = "Open Sans"),
+    plot.title = element_text(size = 22),
+    axis.title.y = element_text(size = 18),
+    axis.text = element_text(size = 18),
+    legend.text = element_text(size = 18),
     legend.position = "none",
     legend.title = element_blank()
   )
@@ -161,10 +168,20 @@ hr_final %>%
 # HR by Ecoregion and sex
 hr_final %>% 
   ggplot() +
-  geom_boxplot(aes(x = EcoReg.II, y = mean.HR, col = Sex, fill = Sex)) +
+  geom_boxplot(aes(x = Coastal, y = mean.HR, col = Sex, fill = Sex)) +
   scale_color_manual(values = clemmys_pal) +
   scale_fill_manual(values = clemmys_pal) +
-  theme_classic()
+  theme_classic() +
+  labs(y = "Average Home Range Size (ha)") +
+  theme(
+    axis.title.x = element_blank(),
+    plot.title = element_text(size = 22),
+    axis.title.y = element_text(size = 18),
+    axis.text = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.position = "right",
+    legend.title = element_blank()
+  )
 
 # HR by Study area 
 hr_final %>% 
@@ -178,9 +195,9 @@ hr_final %>%
   theme(
     axis.title.x = element_text(size = 18),
     axis.title.y = element_text(size = 18),
-    plot.title = element_text(size = 22, family = "Open Sans"),
-    axis.text = element_text(size = 18, family = "Open Sans"),
-    legend.text = element_text(size = 18, family = "Open Sans"),
+    plot.title = element_text(size = 22),
+    axis.text = element_text(size = 18),
+    legend.text = element_text(size = 18),
     legend.position = "right",
     legend.title = element_blank()
   )
@@ -188,18 +205,40 @@ hr_final %>%
 # HR by Year
 hr_final %>% 
   ggplot() +
-  geom_smooth(aes(x = Year.scl, y = mean.HR, col = Sex,  fill = Sex), alpha = 0.3, method = "lm") +
+  geom_smooth(aes(x = Year.Start, y = mean.HR, col = Sex,  fill = Sex), alpha = 0.3, method = "lm") +
   scale_color_manual(values = clemmys_pal) +
   scale_fill_manual(values = clemmys_pal) +
-  theme_classic()
+  theme_classic() +
+  labs(y = "Average Home Range Size (ha)",
+       x = "Year") +
+  theme(
+    axis.title.x = element_text(size = 18),
+    plot.title = element_text(size = 22),
+    axis.title.y = element_text(size = 18),
+    axis.text = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.position = "none",
+    legend.title = element_blank()
+  )
 
 # HR by Tracking frequency
 hr_final %>% 
   ggplot() +
-  geom_smooth(aes(x = Track.Freq.scl, y = mean.HR, col = Sex,  fill = Sex), alpha = 0.3, method = "lm") +
+  geom_smooth(aes(x = Track.Freq, y = mean.HR, col = Sex,  fill = Sex), alpha = 0.3, method = "lm") +
   scale_color_manual(values = clemmys_pal) +
   scale_fill_manual(values = clemmys_pal) +
-  theme_classic()
+  theme_classic() +
+  labs(y = "Average Home Range Size (ha)",
+       x = "Tracking Frequency (days/month)") +
+  theme(
+    axis.title.x = element_text(size = 18),
+    plot.title = element_text(size = 22),
+    axis.title.y = element_text(size = 18),
+    axis.text = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.position = "none",
+    legend.title = element_blank()
+  )
 
 ################################################################################
 # 3: Meta Regression ###########################################################
@@ -234,7 +273,7 @@ sum_out_null
 # Fit the meta-regression model with the full set of covariates
 out1 <- metafor::rma(yi= mean.HR,
                     vi = vi, 
-                    mods = ~ Sex + EcoReg.II + HR.Estimator + ln.SR.Area.scl + Track.Freq.scl, 
+                    mods = ~ Sex + Coastal + HR.Estimator + ln.SR.Area.scl + Track.Freq.scl, 
                     data = hr_final,
                     method = "REML") 
 
@@ -245,7 +284,7 @@ sum_out1
 # Drop Tracking Frequency 
 out2 <- metafor::rma(yi= mean.HR,
                       vi = vi, 
-                      mods = ~ Sex + EcoReg.II + HR.Estimator + ln.SR.Area.scl, 
+                      mods = ~ Sex + Coastal + HR.Estimator + ln.SR.Area.scl, 
                       data = hr_final,
                       method = "REML") 
 
@@ -256,7 +295,7 @@ sum_out2
 # Drop Sex
 out3 <- metafor::rma(yi= mean.HR,
                      vi = vi, 
-                     mods = ~ EcoReg.II + HR.Estimator + ln.SR.Area.scl, 
+                     mods = ~ Coastal + HR.Estimator + ln.SR.Area.scl, 
                      data = hr_final,
                      method = "REML") 
 
@@ -302,25 +341,27 @@ sum_out6
 # List the parameter in each model
 mod_params <- c(
   "Intercept Only (Null)",
-  "Sex + EcoReg + HR.Est + ln.SR.Area + Track.Freq",
-  "Sex + EcoReg + HR.Est + ln.SR.Area",
-  "EcoReg + HR.Est + ln.SR.Area",
-  "HR.Est + ln.SR.Area",
-  "ln.SR.Area",
-  "Sex + ln.SR.Area"
+  "Sex + Coastal + HR.Est + ln(study area) + Track.Freq",
+  "Sex + Coastal + HR.Est + ln(study area)",
+  "Coastal + HR.Est + ln(study area)",
+  "HR.Est + ln(study area)",
+  "ln(study area)",
+  "Sex + ln(study area)"
 )
 
 # Create a table of model AIC scores 
 aic_table <- AIC(out_null, out1, out2, out3, out4, out5, out6) %>% 
   tibble() %>% 
   # Calculate delta AIC
-  mutate(Dela.AIC = AIC - min(AIC)) %>% 
+  mutate(Delta.AIC = AIC - min(AIC)) %>% 
   # Calculate Parameters
   mutate(Parameters = mod_params) %>% 
   # Sort by AIC Scores
   arrange(AIC) %>% 
   # Change column order
-  select(Parameters, AIC, Dela.AIC, df)
+  select(Parameters, AIC, Delta.AIC, df) %>% 
+  # Round
+  mutate(across(.cols = c("AIC", "Delta.AIC"), .fns = ~ round(.x, 2)))
   
 # View model AIC table 
 aic_table
@@ -345,16 +386,33 @@ best_mod <- out2
 save(best_mod, file = "Data\\top_MetaReg_mode.RData")
 
 # View the "best" model as a flextable
-mod_flx_tbl <- tidy(best_mod) %>% 
-  mutate(across(where(is.numeric), ~ signif(.x, digits = 2))) %>% 
-  mutate(p.value = signif(p.value, 2)) %>% 
-  mutate(term = str_remove(term, "EcoReg.II")) %>% 
-  mutate(term = str_remove(term, "HR.Estimator")) %>% 
-  flextable()
+mod_flx_tbl <- tibble(Parameter = tidy(best_mod)$term,
+                      Estimate = best_mod$beta[,1],
+                      std.error = best_mod$se,
+                      z.value = best_mod$zval,
+                      p.value = best_mod$pval
+                      ) %>% 
+  # Round
+  mutate(across(where(is.numeric), ~ round(.x, digits = 2))) %>% 
+  # Format as p-values
+  mutate(p.value = pvalue(p.value, accuracy = 0.01)) %>%
+  # Significance level
+  mutate(Signif = case_when(p.value <= 0.01 ~ "***",
+                            p.value > 0.01 & p.value <= 0.05 ~ "**",
+                            p.value > 0.05 & p.value <= 0.15 ~ "*",
+                            TRUE ~ NA)) %>% 
+  # Clear excess text
+  mutate(Parameter = str_remove(Parameter, "Coastal")) %>% 
+  mutate(Parameter = str_remove(Parameter, "HR.Estimator")) %>% 
+  mutate(Parameter = str_replace(Parameter, "Sex", "Sex ")) %>% 
+  mutate(Parameter = str_replace(Parameter, "ln.SR.Area.scl", "ln(study area size)")) %>% 
+  flextable() %>% 
+  # Change width
+  flextable::width(j = "Parameter", width = 40, unit = "mm") 
 
 # View the best model flextable
 mod_flx_tbl
 
 # Save the best model flextable
-save(mod_flx_tbl, path = "Figures\\Best_Mod_table.png")
+flextable::save_as_image(mod_flx_tbl, path = "Figures\\Best_Mod_table.png")
 
