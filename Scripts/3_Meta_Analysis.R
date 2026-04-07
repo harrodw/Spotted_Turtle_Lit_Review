@@ -22,6 +22,8 @@ rm(list = ls())
 library(tidyverse)
 library(metafor)
 library(flextable)
+library(ggpubr)
+library(gridExtra)
 library(broom)
 library(scales)
 
@@ -102,7 +104,8 @@ hr_final <- hr_lng %>%
                                   HR.Estimator == "mcp.095" ~ "95% MCP",
                                   HR.Estimator == "mcp.100" ~ "100% MCP",
                                   HR.Estimator == "tlocoh" ~ "T-LoCoH",
-                                  TRUE ~ NA)) %>% 
+                                  TRUE ~ NA)
+         ) %>%
   # Convert them to factors
   mutate(Sex = factor(Sex, levels = c("Female", "Male", "Combined")),
          EcoReg.II = factor(EcoReg.II, levels = c("5.2 Mixed Wood Shield", 
@@ -157,9 +160,9 @@ hr_final %>%
   labs(y = "Average Home Range Size (ha)") +
   theme(
     axis.title.x = element_blank(),
-    plot.title = element_text(size = 22),
+    plot.title = element_text(size = 18),
     axis.title.y = element_text(size = 18),
-    axis.text = element_text(size = 18),
+    axis.text = element_text(size = 16),
     legend.text = element_text(size = 18),
     legend.position = "none",
     legend.title = element_blank()
@@ -175,9 +178,9 @@ hr_final %>%
   labs(y = "Average Home Range Size (ha)") +
   theme(
     axis.title.x = element_blank(),
-    plot.title = element_text(size = 22),
+    plot.title = element_text(size = 18),
     axis.title.y = element_text(size = 18),
-    axis.text = element_text(size = 18),
+    axis.text = element_text(size = 16),
     legend.text = element_text(size = 18),
     legend.position = "right",
     legend.title = element_blank()
@@ -193,10 +196,10 @@ hr_final %>%
   labs(y = "Average Home Range Size (ha)",
        x = "log of Study Area Size (ha)") +
   theme(
-    axis.title.x = element_text(size = 18),
+    axis.title.x = element_text(size = 16),
     axis.title.y = element_text(size = 18),
-    plot.title = element_text(size = 22),
-    axis.text = element_text(size = 18),
+    plot.title = element_text(size = 18),
+    axis.text = element_text(size = 16),
     legend.text = element_text(size = 18),
     legend.position = "right",
     legend.title = element_blank()
@@ -212,10 +215,10 @@ hr_final %>%
   labs(y = "Average Home Range Size (ha)",
        x = "Year") +
   theme(
-    axis.title.x = element_text(size = 18),
-    plot.title = element_text(size = 22),
+    axis.title.x = element_text(size = 16),
+    plot.title = element_text(size = 18),
     axis.title.y = element_text(size = 18),
-    axis.text = element_text(size = 18),
+    axis.text = element_text(size = 16),
     legend.text = element_text(size = 18),
     legend.position = "none",
     legend.title = element_blank()
@@ -231,10 +234,10 @@ hr_final %>%
   labs(y = "Average Home Range Size (ha)",
        x = "Tracking Frequency (days/month)") +
   theme(
-    axis.title.x = element_text(size = 18),
-    plot.title = element_text(size = 22),
+    axis.title.x = element_text(size = 16),
+    plot.title = element_text(size = 18),
     axis.title.y = element_text(size = 18),
-    axis.text = element_text(size = 18),
+    axis.text = element_text(size = 16),
     legend.text = element_text(size = 18),
     legend.position = "none",
     legend.title = element_blank()
@@ -416,3 +419,422 @@ mod_flx_tbl
 # Save the best model flextable
 flextable::save_as_image(mod_flx_tbl, path = "Figures\\Best_Mod_table.png")
 
+################################################################################
+# 4: Data Visualization ########################################################
+################################################################################
+
+# 4.1: prepare model output ----------------------------------------------------
+
+# Define the length of the scaled output
+lgth_sim <- 1000
+
+# calculate the mean and sd of study area size
+mu_sa_size <- mean(hr_final$ln.SR.Area, na.rm = TRUE)
+sd_sa_size <- sd(hr_final$ln.SR.Area, na.rm = TRUE)
+
+# View these
+mu_sa_size
+sd_sa_size
+
+# Build a tibble of the best model's output
+best_mod_long <- tibble(
+  Parameter = tidy(best_mod)$term,
+  mean = best_mod$beta[,1],
+  lb = best_mod$ci.lb,
+  ub = best_mod$ci.ub
+) %>%  
+  # Round
+  mutate(across(where(is.numeric), ~ round(.x, digits = 2))) %>% 
+  # Clear excess text
+  mutate(Parameter = str_remove(Parameter, "Coastal")) %>% 
+  mutate(Parameter = str_remove(Parameter, "HR.Estimator")) %>% 
+  mutate(Parameter = str_remove(Parameter, "%")) %>% 
+  mutate(Parameter = str_replace(Parameter, "Sex", "Sex ")) %>%
+  mutate(Parameter = str_replace_all(Parameter, " ", ".")) %>%
+  mutate(Parameter = str_replace_all(Parameter, "_", "."))
+
+# Widen
+best_mod_tbl <- best_mod_long %>% 
+  pivot_wider(names_from = Parameter, values_from = c("mean", "lb", "ub"), names_sep = ".") %>% 
+  # Repeat
+  slice(rep(1:n(), each = lgth_sim)) %>% 
+  # Add scaled values 
+  mutate(x = seq(from = -2, to = 2, length.out = lgth_sim)) %>% 
+  # Unscale study area size
+  mutate(x.naive = x * sd_sa_size + mu_sa_size)
+
+# View
+glimpse(best_mod_tbl)
+best_mod_tbl
+
+# 4.2: Make the initial plots --------------------------------------------------
+
+# View the data again
+glimpse(best_mod_tbl)
+
+# 100% MCP coastal
+mcp_100_coast_plot <- best_mod_tbl %>% 
+  ggplot() +
+  # Trend line and error ribbon for coastal females
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.ln.SR.Area.scl * x), 
+            color = "#C0361C", linetype = "solid", lwd = 1.6, alpha = 0.8) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.ln.SR.Area.scl * x),
+              fill = "#C0361C", alpha = 0.3) +
+  # Trend line and error ribbon for coastal males
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.Sex.Male + mean.ln.SR.Area.scl * x), 
+            color = "#422E28", linetype = "solid", lwd = 1.6, alpha = 0.7) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.Sex.Male + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.Sex.Male + ub.ln.SR.Area.scl * x),
+              fill = "#422E28", alpha = 0.2) +
+  # Trend line and error ribbon for coastal combined
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.Sex.Combined + mean.ln.SR.Area.scl * x),
+            color = "#F7E57C", linetype = "solid", lwd = 1.6, alpha = 0.6) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.Sex.Combined + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.Sex.Combined + ub.ln.SR.Area.scl * x),
+              fill = "#F7E57C", alpha = 0.1) +
+  # Labels
+  labs(
+    title = "100% MCP: Costal",
+       x = "",
+       y = "Home Range Size"
+       ) +
+  scale_y_continuous(limits = c(-8, 21), breaks = c(0, 10, 20),  labels = unit_format(unit = "ha", sep = "")) +
+  scale_x_continuous(labels = unit_format(unit = "ha", sep = "", big.mark = "")) +
+  # Themes
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 18),
+    axis.title.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16),
+    axis.text = element_text(size = 16),
+    legend.text = element_text(size = 18),
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+# View
+mcp_100_coast_plot
+
+# 100% MCP inland
+mcp_100_land_plot <- best_mod_tbl %>% 
+  ggplot() +
+  # Trend line and error ribbon for coastal females
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.Inland + mean.ln.SR.Area.scl * x), 
+            color = "#C0361C", linetype = "solid", lwd = 1.6, alpha = 0.8) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.Inland + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.Inland + ub.ln.SR.Area.scl * x),
+              fill = "#C0361C", alpha = 0.3) +
+  # Trend line and error ribbon for coastal males
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.Sex.Male + mean.Inland + mean.ln.SR.Area.scl * x), 
+            color = "#422E28", linetype = "solid", lwd = 1.6, alpha = 0.7) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.Sex.Male + lb.Inland + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.Sex.Male + ub.Inland + ub.ln.SR.Area.scl * x),
+              fill = "#422E28", alpha = 0.2) +
+  # Trend line and error ribbon for coastal combined
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.Sex.Combined + mean.Inland + mean.ln.SR.Area.scl * x),
+            color = "#F7E57C", linetype = "solid", lwd = 1.6, alpha = 0.6) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.Sex.Combined + lb.Inland + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.Sex.Combined + ub.Inland + ub.ln.SR.Area.scl * x),
+              fill = "#F7E57C", alpha = 0.1) +
+  # Labels
+  labs(
+    title = "100% MCP: Inland",
+    x = "",
+    y = ""
+  ) +
+  scale_y_continuous(limits = c(-8, 21), breaks = c(0, 10, 20), labels = unit_format(unit = "ha", sep = "")) +
+  scale_x_continuous(labels = unit_format(unit = "ha", sep = "", big.mark = "")) +
+  # Themes
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 18),
+    axis.title.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16),
+    axis.text = element_text(size = 16),
+    legend.text = element_text(size = 18),
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+# View
+mcp_100_land_plot
+
+# 95% MCP coastal
+mcp_095_coast_plot <- best_mod_tbl %>% 
+  ggplot() +
+  # Trend line and error ribbon for coastal females
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.MCP + mean.ln.SR.Area.scl * x), 
+            color = "#C0361C", linetype = "solid", lwd = 1.6, alpha = 0.8) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.MCP + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.MCP + ub.ln.SR.Area.scl * x),
+              fill = "#C0361C", alpha = 0.3) +
+  # Trend line and error ribbon for coastal males
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.MCP + mean.Sex.Male + mean.ln.SR.Area.scl * x), 
+            color = "#422E28", linetype = "solid", lwd = 1.6, alpha = 0.7) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.MCP + lb.Sex.Male + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.MCP+ ub.Sex.Male + ub.ln.SR.Area.scl * x),
+              fill = "#422E28", alpha = 0.2) +
+  # Trend line and error ribbon for coastal combined
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.MCP + mean.Sex.Combined + mean.ln.SR.Area.scl * x),
+            color = "#F7E57C", linetype = "solid", lwd = 1.6, alpha = 0.6) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.MCP + lb.Sex.Combined + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.MCP + ub.Sex.Combined + ub.ln.SR.Area.scl * x),
+              fill = "#F7E57C", alpha = 0.1) +
+  # Labels
+  labs(
+    title = "95% MCP: Costal",
+    x = "",
+    y = "Home Range Size"
+  ) +
+  scale_y_continuous(limits = c(-8, 21), breaks = c(0, 10, 20), labels = unit_format(unit = "ha", sep = "")) +
+  scale_x_continuous(labels = unit_format(unit = "ha", sep = "", big.mark = "")) +
+  # Themes
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 18),
+    axis.title.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16),
+    axis.text = element_text(size = 16),
+    legend.text = element_text(size = 18),
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+# View
+mcp_095_coast_plot
+
+# 95% MCP inland
+mcp_095_land_plot <- best_mod_tbl %>% 
+  ggplot() +
+  # Trend line and error ribbon for coastal females
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.MCP + mean.Inland + mean.ln.SR.Area.scl * x), 
+            color = "#C0361C", linetype = "solid", lwd = 1.6, alpha = 0.8) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.MCP + lb.Inland + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.MCP + ub.Inland + ub.ln.SR.Area.scl * x),
+              fill = "#C0361C", alpha = 0.3) +
+  # Trend line and error ribbon for coastal males
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.MCP + mean.Sex.Male + mean.Inland + mean.ln.SR.Area.scl * x), 
+            color = "#422E28", linetype = "solid", lwd = 1.6, alpha = 0.7) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.MCP + lb.Sex.Male + lb.Inland + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.MCP + ub.Sex.Male + ub.Inland + ub.ln.SR.Area.scl * x),
+              fill = "#422E28", alpha = 0.2) +
+  # Trend line and error ribbon for coastal combined
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.MCP + mean.Sex.Combined + mean.Inland + mean.ln.SR.Area.scl * x),
+            color = "#F7E57C", linetype = "solid", lwd = 1.6, alpha = 0.6) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.MCP + lb.Sex.Combined + lb.Inland + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.MCP + ub.Sex.Combined + ub.Inland + ub.ln.SR.Area.scl * x),
+              fill = "#F7E57C", alpha = 0.1) +
+  # Labels
+  labs(
+    title = "95% MCP: Inland",
+    x = "",
+    y = ""
+  ) +
+  scale_y_continuous(limits = c(-8, 21), breaks = c(0, 10, 20), labels = unit_format(unit = "ha", sep = "")) +
+  scale_x_continuous(labels = unit_format(unit = "ha", sep = "", big.mark = "")) +
+  # Themes
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 18),
+    axis.title.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16),
+    axis.text = element_text(size = 16),
+    legend.text = element_text(size = 18),
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+# View
+mcp_095_land_plot
+
+# 95% KDE coastal
+kde_095_coast_plot <- best_mod_tbl %>% 
+  ggplot() +
+  # Trend line and error ribbon for coastal females
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.KDE + mean.ln.SR.Area.scl * x), 
+            color = "#C0361C", linetype = "solid", lwd = 1.6, alpha = 0.8) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.KDE + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.KDE + ub.ln.SR.Area.scl * x),
+              fill = "#C0361C", alpha = 0.3) +
+  # Trend line and error ribbon for coastal males
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.KDE + mean.Sex.Male + mean.ln.SR.Area.scl * x), 
+            color = "#422E28", linetype = "solid", lwd = 1.6, alpha = 0.7) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.KDE + lb.Sex.Male + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.KDE+ ub.Sex.Male + ub.ln.SR.Area.scl * x),
+              fill = "#422E28", alpha = 0.2) +
+  # Trend line and error ribbon for coastal combined
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.KDE + mean.Sex.Combined + mean.ln.SR.Area.scl * x),
+            color = "#F7E57C", linetype = "solid", lwd = 1.6, alpha = 0.6) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.KDE + lb.Sex.Combined + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.KDE + ub.Sex.Combined + ub.ln.SR.Area.scl * x),
+              fill = "#F7E57C", alpha = 0.1) +
+  # Lables 
+  labs(
+       x = "Study Region Size", 
+       y = "Home Range Size",
+       title = "95% KDE: Costal") +
+  scale_y_continuous(limits = c(-8, 21), breaks = c(0, 10, 20), labels = unit_format(unit = "ha", sep = "")) +
+  scale_x_continuous(labels = unit_format(unit = "ha", sep = "", big.mark = "")) +
+  # Themes
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 18),
+    axis.title.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16),
+    axis.text = element_text(size = 16),
+    legend.text = element_text(size = 18),
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+# View
+kde_095_coast_plot
+
+# 95% KDE inland
+kde_095_land_plot <- best_mod_tbl %>% 
+  ggplot() +
+  # Trend line and error ribbon for coastal females
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.KDE + mean.Inland + mean.ln.SR.Area.scl * x), 
+            color = "#C0361C", linetype = "solid", lwd = 1.6, alpha = 0.8) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.KDE + lb.Inland + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.KDE + ub.Inland + ub.ln.SR.Area.scl * x),
+              fill = "#C0361C", alpha = 0.3) +
+  # Trend line and error ribbon for coastal males
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.KDE + mean.Sex.Male + mean.Inland + mean.ln.SR.Area.scl * x), 
+            color = "#422E28", linetype = "solid", lwd = 1.6, alpha = 0.7) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.KDE + lb.Sex.Male + lb.Inland + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.KDE + ub.Sex.Male + ub.Inland + ub.ln.SR.Area.scl * x),
+              fill = "#422E28", alpha = 0.2) +
+  # Trend line and error ribbon for coastal combined
+  geom_line(aes(x = exp(x.naive), 
+                y = mean.intercept + mean.95.KDE + mean.Sex.Combined + mean.Inland + mean.ln.SR.Area.scl * x),
+            color = "#F7E57C", linetype = "solid", lwd = 1.6, alpha = 0.6) +
+  geom_ribbon(aes(x = exp(x.naive), 
+                  ymin = lb.intercept + lb.95.KDE + lb.Sex.Combined + lb.Inland + lb.ln.SR.Area.scl * x,
+                  ymax = ub.intercept + ub.95.KDE + ub.Sex.Combined + ub.Inland + ub.ln.SR.Area.scl * x),
+              fill = "#F7E57C", alpha = 0.1) +
+  # Lables 
+  labs(x = "Study Region Size", 
+       y = "",
+       title = "95% KDE: Inland") +
+  scale_y_continuous(limits = c(-8, 21), breaks = c(0, 10, 20), labels = unit_format(unit = "ha", sep = "")) +
+  scale_x_continuous(labels = unit_format(unit = "ha", sep = "", big.mark = "")) +
+  # Themes
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 18),
+    axis.title.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16),
+    axis.text = element_text(size = 16),
+    legend.text = element_text(size = 18),
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+# View
+kde_095_land_plot
+
+# 4.3: Make the legend ---------------------------------------------------------
+
+# Define a color pallete (can you guess the theme?)
+clemmys_pal <- c("#C0361C", "#422E28", "#F7E57C")
+
+# legend data
+legend_data  <- best_mod_long %>% 
+  filter(Parameter %in% c("intercept", "Sex.Male", "Sex.Combined")) %>% 
+  mutate(Parameter = case_when(Parameter == "intercept" ~ "Female",
+                                Parameter == "Sex.Male" ~ "Male",
+                                Parameter == "Sex.Combined" ~ "Combined")) %>% 
+  mutate(Parameter = factor(Parameter, levels = c("Female", "Male", "Combined"))) %>% 
+  mutate(x = 1:3)
+         
+# View
+legend_data
+
+# legend plot
+legend_plot <- legend_data %>% 
+  # Plot
+  ggplot() +
+  geom_line(aes(x = x, y = mean, color = Parameter),
+            linetype = "solid", lwd = 1.6, alpha = 0.6) +
+  geom_ribbon(aes(x = x, ymin = lb, ymax = ub, fill = Parameter),
+              alpha = 0.15) +
+  scale_color_manual(values = clemmys_pal) +
+  scale_fill_manual(values = clemmys_pal) +
+  scale_y_continuous(limits = c(-8, 21), breaks = c(0, 10, 20), labels = unit_format(unit = "ha", sep = "")) +
+  # Themes
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 18),
+    axis.title.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16),
+    axis.text = element_text(size = 16),
+    legend.text = element_text(size = 18),
+    legend.position = "bottom",
+    legend.key.size = unit(1, "cm"),
+    legend.title = element_blank()
+  )
+
+# View
+legend_plot
+
+# Extract the legend 
+legend <- get_legend(legend_plot)
+  
+# 4.4: Combine plots -----------------------------------------------------------
+
+# Combine plots
+plots_grid <- grid.arrange(mcp_095_coast_plot, mcp_095_land_plot,
+                           mcp_100_coast_plot, mcp_100_land_plot,
+                           kde_095_coast_plot, kde_095_land_plot,
+                           nrow = 3, ncol = 2)
+
+# View combine plots
+plots_grid
+
+# Add legend
+plots_legend <- grid.arrange(plots_grid, legend, 
+                             nrow = 2, ncol = 1,
+                             heights = c(0.9, 0.1))
+
+# View 
+plots_legend
+
+# 4.5: Export ------------------------------------------------------------------
+
+# Save the plot as a png
+ggsave(plot = plots_legend,
+       filename = "Figures\\Clemmys_Model_Pred_Plot.png",
+       width = 250,
+       height = 300,
+       units = "mm",
+       dpi = 300)
